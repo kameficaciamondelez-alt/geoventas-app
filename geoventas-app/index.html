@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1E40AF">
+    <title>GeoVentas • Tracking de Puntos de Venta</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+        
+        * { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke; }
+        
+        .map-container { height: 320px; }
+        
+        .header-safe {
+            padding-top: env(safe-area-inset-top);
+        }
+        
+        .user-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .user-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar {
+            height: 6px;
+        }
+        
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background-color: #64748b;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="font-sans bg-slate-50 text-slate-900 min-h-screen overflow-x-hidden">
+    <!-- HEADER - Mejorado para móviles (más compacto y con safe-area) -->
+    <div class="bg-gradient-to-r from-[#1E3A8A] to-[#1E40AF] text-white sticky top-0 z-50 shadow-md header-safe">
+        <div class="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-white text-[#1E40AF] rounded-2xl flex items-center justify-center text-2xl font-bold flex-shrink-0">📍</div>
+                <div class="min-w-0">
+                    <h1 class="text-2xl font-semibold tracking-tight" style="font-family: 'Space Grotesk', sans-serif;" data-t="GeoVentas">GeoVentas</h1>
+                    <p class="text-[10px] opacity-75 -mt-0.5" data-t="Tracking inteligente">Tracking inteligente</p>
+                </div>
+            </div>
+            
+            <!-- Language -->
+            <div class="flex bg-white/10 backdrop-blur-md rounded-3xl p-0.5 text-xs font-medium">
+                <button onclick="switchLanguage('es')" id="lang-es"
+                        class="px-4 py-1.5 rounded-3xl flex items-center gap-1 bg-white text-[#1E40AF] shadow-sm">
+                    🇨🇴 ES
+                </button>
+                <button onclick="switchLanguage('en')" id="lang-en"
+                        class="px-4 py-1.5 rounded-3xl flex items-center gap-1">
+                    🇬🇧 EN
+                </button>
+            </div>
+            
+            <!-- Mode -->
+            <div class="flex bg-white/10 backdrop-blur-md rounded-3xl p-0.5 text-xs">
+                <button onclick="setMode('seller')" id="mode-seller"
+                        class="flex items-center gap-1.5 px-4 py-1.5 rounded-3xl font-semibold bg-white text-[#1E40AF]">
+                    👷‍♂️ <span id="label-seller" data-t="Vendedor">Vendedor</span>
+                </button>
+                <button onclick="setMode('admin')" id="mode-admin"
+                        class="flex items-center gap-1.5 px-4 py-1.5 rounded-3xl font-semibold">
+                    ⚙️ <span id="label-admin" data-t="Admin">Admin</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-2xl mx-auto px-4 pb-28">
+        
+        <!-- SELLER MODE -->
+        <div id="seller-screen">
+            <!-- Home -->
+            <div id="seller-home" class="pt-6">
+                <h2 id="seller-title" class="text-3xl font-semibold mb-1" data-t="¡Hola, Vendedor!">¡Hola, Vendedor!</h2>
+                <p id="seller-subtitle" class="text-slate-600 mb-8" data-t="Selecciona tu usuario para comenzar">Selecciona tu usuario para comenzar</p>
+                
+                <!-- User List - Responsive: grid 1 o 2 columnas, pasa a lista vertical si > 4 usuarios -->
+                <div id="user-list" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- JS populated -->
+                </div>
+                
+                <button onclick="startNewDayDemo()" 
+                        class="mt-10 w-full bg-[#10B981] hover:bg-emerald-600 text-white font-semibold py-7 rounded-3xl text-xl flex items-center justify-center gap-3 shadow-xl active:scale-[0.985]">
+                    <span class="text-3xl">🚀</span>
+                    <span id="btn-start-day" data-t="INICIAR DÍA">INICIAR DÍA</span>
+                </button>
+            </div>
+            
+            <!-- Active Day -->
+            <div id="active-day-screen" class="hidden">
+                <div class="flex justify-between items-center mb-5">
+                    <div class="min-w-0">
+                        <p id="current-user-name" class="font-semibold text-xl truncate"></p>
+                        <p id="current-date" class="text-sm text-slate-500"></p>
+                    </div>
+                    <div id="total-km-badge" class="bg-emerald-100 text-emerald-700 text-sm font-bold px-5 py-2 rounded-3xl whitespace-nowrap">
+                        0.0 km
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-3xl overflow-hidden shadow-sm mb-6">
+                    <div id="map" class="map-container"></div>
+                </div>
+                
+                <h3 id="visited-title" class="font-semibold mb-4 flex items-center gap-2 text-lg" data-t="Puntos visitados hoy">📍 Puntos visitados hoy</h3>
+                <div id="visited-list" class="space-y-3 mb-8">
+                    <!-- JS -->
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 fixed bottom-6 left-4 right-4 max-w-2xl mx-auto">
+                    <button onclick="showAddPointModal()" 
+                            class="bg-[#1E40AF] text-white h-16 rounded-3xl font-semibold text-base flex items-center justify-center gap-3 active:scale-95">
+                        <span class="text-3xl">📍</span>
+                        <span id="btn-add-point" data-t="AGREGAR PUNTO">AGREGAR PUNTO</span>
+                    </button>
+                    <button onclick="finishDay()" 
+                            class="border-2 border-red-500 text-red-600 h-16 rounded-3xl font-semibold text-base flex items-center justify-center gap-3 active:scale-95">
+                        <span class="text-3xl">🏁</span>
+                        <span id="btn-finish-day" data-t="FINALIZAR DÍA">FINALIZAR DÍA</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ADMIN MODE -->
+        <div id="admin-screen" class="hidden pt-4">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="admin-title" class="text-3xl font-semibold" data-t="Panel de Administración">Panel de Administración</h2>
+                <button onclick="exportAllData()" 
+                        class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-3xl text-sm font-medium active:scale-95">
+                    📤 <span data-t="Exportar todo (CSV)">Exportar todo</span>
+                </button>
+            </div>
+            
+            <!-- Users Section -->
+            <div class="mb-10">
+                <div class="flex justify-between items-center mb-4 px-1">
+                    <h3 id="users-title" class="font-semibold text-lg" data-t="Usuarios asignados">Usuarios asignados</h3>
+                    <button onclick="showAddUserModal()" 
+                            class="flex items-center gap-1 text-[#1E40AF] text-sm font-medium active:opacity-70">
+                        <span class="text-2xl leading-none">+</span> <span data-t="Nuevo usuario">Nuevo</span>
+                    </button>
+                </div>
+                <div id="admin-users-list" class="space-y-3">
+                    <!-- JS -->
+                </div>
+            </div>
+            
+            <!-- Points Section -->
+            <div>
+                <div class="flex justify-between items-center mb-4 px-1">
+                    <h3 id="points-title" class="font-semibold text-lg" data-t="Puntos de venta predefinidos por usuario">Puntos predefinidos</h3>
+                    <button onclick="showBulkImportModal()" 
+                            class="flex items-center gap-1 text-emerald-600 text-sm font-medium active:opacity-70">
+                        📥 <span data-t="Importar masivamente">Masivo</span>
+                    </button>
+                </div>
+                
+                <select id="admin-user-select" onchange="loadPointsForUser()" 
+                        class="w-full bg-white border border-slate-200 rounded-3xl px-6 py-4 text-base mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </select>
+                
+                <div id="points-list" class="space-y-3 mb-6">
+                </div>
+                
+                <button onclick="showAddPointAdminModal()" 
+                        class="w-full flex items-center justify-center gap-3 border-2 border-dashed border-slate-300 hover:border-slate-400 text-slate-500 py-7 rounded-3xl text-base font-medium active:scale-95">
+                    <span class="text-3xl">+</span> 
+                    <span data-t="Agregar punto de venta">Agregar punto</span>
+                </button>
+            </div>
+            
+            <!-- History -->
+            <div class="mt-12 pt-8 border-t border-slate-200">
+                <h3 id="history-title" class="font-semibold text-lg mb-4" data-t="Historial completo de visitas">Historial completo</h3>
+                <div id="history-table" class="bg-white rounded-3xl p-5 text-xs overflow-auto max-h-80 scrollbar-thin">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modals (mismos que antes, solo con mejoras menores de padding) -->
+    <!-- ADD POINT MODAL -->
+    <div onclick="if(event.target.id==='add-point-modal')hideAddPointModal()" 
+         id="add-point-modal" class="hidden fixed inset-0 bg-black/70 flex items-end z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" 
+             class="bg-white w-full max-w-2xl mx-auto rounded-t-3xl p-6 pb-8">
+            <h3 class="text-2xl font-semibold mb-6" data-t="Registrar nuevo punto">Registrar nuevo punto</h3>
+            
+            <div class="flex border-b mb-6">
+                <button onclick="switchTab(1)" id="tab-1" class="flex-1 py-4 text-center font-semibold border-b-4 border-[#1E40AF]">📍 <span data-t="Nombre automático (Google)">Nombre automático</span></button>
+                <button onclick="switchTab(2)" id="tab-2" class="flex-1 py-4 text-center font-semibold">📋 <span data-t="Seleccionar de mi lista">De mi lista</span></button>
+            </div>
+            
+            <div id="tab-content-1">
+                <button onclick="getCurrentLocationAndReverseGeocode()" 
+                        class="w-full py-10 border-2 border-dashed border-slate-300 hover:border-blue-300 rounded-3xl flex flex-col items-center gap-4">
+                    <div class="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center text-5xl">🌐</div>
+                    <span id="geocode-btn" class="font-semibold text-xl" data-t="Obtener ubicación actual + nombre">Obtener ubicación + nombre</span>
+                </button>
+                <div id="reverse-result" class="mt-8 hidden">
+                    <p id="detected-name" class="font-medium text-sm leading-relaxed"></p>
+                    <input id="custom-name-1" type="text" placeholder="Nombre del punto" 
+                           class="w-full mt-4 border border-slate-300 rounded-3xl px-6 py-5 text-base">
+                    <button onclick="savePointFromGeocode()" 
+                            class="mt-6 w-full py-6 bg-emerald-600 text-white rounded-3xl font-semibold" data-t="Guardar punto">Guardar punto</button>
+                </div>
+            </div>
+            
+            <div id="tab-content-2" class="hidden">
+                <select id="predefined-select" class="w-full border border-slate-300 rounded-3xl px-6 py-6 text-base"></select>
+                <button onclick="savePredefinedPoint()" 
+                        class="mt-6 w-full py-6 bg-emerald-600 text-white rounded-3xl font-semibold" data-t="Guardar punto seleccionado">Guardar seleccionado</button>
+            </div>
+            
+            <button onclick="hideAddPointModal()" class="mt-8 w-full py-4 text-slate-500 font-medium" data-t="Cancelar">Cancelar</button>
+        </div>
+    </div>
+    
+    <!-- Bulk Import Modal -->
+    <div onclick="if(event.target.id==='bulk-modal')hideBulkImportModal()" 
+         id="bulk-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" class="bg-white w-full max-w-lg mx-4 rounded-3xl p-8">
+            <h3 class="text-2xl font-semibold mb-2" data-t="Importar puntos masivamente">Importar masivamente</h3>
+            <p class="text-slate-500 text-sm mb-6">Una línea por punto: <strong>Nombre,Latitud,Longitud</strong></p>
+            <textarea id="bulk-textarea" rows="12" 
+                      class="w-full border border-slate-300 rounded-3xl px-6 py-5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+            <div class="flex gap-4 mt-8">
+                <button onclick="hideBulkImportModal()" class="flex-1 py-6 text-slate-500 font-medium border border-slate-300 rounded-3xl" data-t="Cancelar">Cancelar</button>
+                <button onclick="processBulkImport()" class="flex-1 py-6 bg-emerald-600 text-white font-semibold rounded-3xl" data-t="Importar ahora">Importar ahora</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add User Modal -->
+    <div onclick="if(event.target.id==='add-user-modal')hideAddUserModal()" 
+         id="add-user-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" class="bg-white w-full max-w-md mx-4 rounded-3xl p-8">
+            <h3 class="text-2xl font-semibold mb-6" data-t="Nuevo usuario">Nuevo usuario</h3>
+            <input id="new-user-name" type="text" placeholder="Nombre completo del vendedor" 
+                   class="w-full rounded-3xl border border-slate-300 px-6 py-5 mb-6 text-base">
+            <button onclick="addNewUser()" class="w-full py-6 bg-[#1E40AF] text-white rounded-3xl font-semibold" data-t="Crear usuario">Crear usuario</button>
+            <button onclick="hideAddUserModal()" class="mt-4 w-full py-4 text-slate-500" data-t="Cancelar">Cancelar</button>
+        </div>
+    </div>
+    
+    <!-- Add Predefined Point Modal -->
+    <div onclick="if(event.target.id==='add-predefined-modal')hideAddPredefinedModal()" 
+         id="add-predefined-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" class="bg-white w-full max-w-md mx-4 rounded-3xl p-8">
+            <h3 class="text-2xl font-semibold mb-6" data-t="Nuevo punto de venta">Nuevo punto de venta</h3>
+            <input id="new-point-name" type="text" placeholder="Nombre del punto" class="w-full rounded-3xl border border-slate-300 px-6 py-5 mb-6">
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-2" data-t="Latitud">Latitud</label>
+                    <input id="new-point-lat" type="number" step="0.000001" class="w-full rounded-3xl border border-slate-300 px-6 py-5">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-2" data-t="Longitud">Longitud</label>
+                    <input id="new-point-lng" type="number" step="0.000001" class="w-full rounded-3xl border border-slate-300 px-6 py-5">
+                </div>
+            </div>
+            
+            <button onclick="getCurrentLocationForAdminPoint()" 
+                    class="mt-6 w-full py-5 border border-[#1E40AF] text-[#1E40AF] rounded-3xl font-medium">📍 Usar ubicación actual</button>
+            
+            <button onclick="saveNewPredefinedPoint()" 
+                    class="mt-4 w-full py-6 bg-emerald-600 text-white rounded-3xl font-semibold" data-t="Guardar punto">Guardar punto</button>
+            <button onclick="hideAddPredefinedModal()" class="mt-4 w-full py-4 text-slate-500" data-t="Cancelar">Cancelar</button>
+        </div>
+    </div>
+    
+    <!-- Summary Modal -->
+    <div onclick="if(event.target.id==='summary-modal')hideSummaryModal()" 
+         id="summary-modal" class="hidden fixed inset-0 bg-black/70 flex items-end z-[9999]">
+        <div onclick="event.stopImmediatePropagation()" class="bg-white w-full max-w-2xl mx-auto rounded-t-3xl p-8">
+            <div class="text-center mb-8">
+                <div class="mx-auto w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center text-6xl mb-4">🏆</div>
+                <h3 class="text-3xl font-semibold" data-t="¡Día finalizado!">¡Día finalizado!</h3>
+                <p class="text-slate-600 mt-1" data-t="Resumen de hoy">Resumen de hoy</p>
+            </div>
+            <div id="summary-content" class="space-y-8"></div>
+            <div class="flex gap-4 mt-10">
+                <button onclick="hideSummaryModal()" class="flex-1 py-6 border border-slate-300 text-slate-600 font-semibold rounded-3xl" data-t="Cerrar">Cerrar</button>
+                <button onclick="downloadTodayCSV()" class="flex-1 py-6 bg-[#1E40AF] text-white font-semibold rounded-3xl" data-t="Descargar CSV del día">📥 Descargar CSV</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ==================== CONFIG ====================
+        let currentLang = 'es'
+        
+        const translations = {
+            es: {
+                "GeoVentas": "GeoVentas",
+                "Tracking inteligente": "Tracking inteligente",
+                "Vendedor": "Vendedor",
+                "Admin": "Admin",
+                "¡Hola, Vendedor!": "¡Hola, Vendedor!",
+                "Selecciona tu usuario para comenzar": "Selecciona tu usuario para comenzar",
+                "INICIAR DÍA": "INICIAR DÍA",
+                "Puntos visitados hoy": "Puntos visitados hoy",
+                "AGREGAR PUNTO": "AGREGAR PUNTO",
+                "FINALIZAR DÍA": "FINALIZAR DÍA",
+                "Panel de Administración": "Panel de Administración",
+                "Exportar todo (CSV)": "Exportar todo",
+                "Usuarios asignados": "Usuarios asignados",
+                "Nuevo usuario": "Nuevo",
+                "Puntos de venta predefinidos por usuario": "Puntos predefinidos",
+                "Importar masivamente": "Masivo",
+                "Agregar punto de venta": "Agregar punto",
+                "Historial completo de visitas": "Historial completo",
+                "Nombre automático (Google)": "Nombre automático",
+                "Seleccionar de mi lista": "De mi lista",
+                "Obtener ubicación actual + nombre": "Obtener ubicación + nombre",
+                "Guardar punto": "Guardar punto",
+                "Guardar punto seleccionado": "Guardar seleccionado",
+                "Cancelar": "Cancelar",
+                "Crear usuario": "Crear usuario",
+                "Nuevo punto de venta": "Nuevo punto de venta",
+                "Latitud": "Latitud",
+                "Longitud": "Longitud",
+                "Usar mi ubicación actual": "Usar ubicación actual",
+                "¡Día finalizado!": "¡Día finalizado!",
+                "Resumen de hoy": "Resumen de hoy",
+                "Descargar CSV del día": "Descargar CSV",
+                "Importar puntos masivamente": "Importar masivamente",
+                "Importar ahora": "Importar ahora"
+            },
+            en: {
+                "GeoVentas": "GeoVentas",
+                "Tracking inteligente": "Smart Tracking",
+                "Vendedor": "Seller",
+                "Admin": "Admin",
+                "¡Hola, Vendedor!": "Hi, Seller!",
+                "Selecciona tu usuario para comenzar": "Select your user to start",
+                "INICIAR DÍA": "START DAY",
+                "Puntos visitados hoy": "Points visited today",
+                "AGREGAR PUNTO": "ADD POINT",
+                "FINALIZAR DÍA": "FINISH DAY",
+                "Panel de Administración": "Administration Panel",
+                "Exportar todo (CSV)": "Export all",
+                "Usuarios asignados": "Assigned users",
+                "Nuevo usuario": "New",
+                "Puntos de venta predefinidos por usuario": "Predefined points",
+                "Importar masivamente": "Bulk",
+                "Agregar punto de venta": "Add point",
+                "Historial completo de visitas": "Full history",
+                "Nombre automático (Google)": "Auto name",
+                "Seleccionar de mi lista": "From list",
+                "Obtener ubicación actual + nombre": "Get location + name",
+                "Guardar punto": "Save point",
+                "Guardar punto seleccionado": "Save selected",
+                "Cancelar": "Cancel",
+                "Crear usuario": "Create user",
+                "Nuevo punto de venta": "New point",
+                "Latitud": "Latitude",
+                "Longitud": "Longitude",
+                "Usar mi ubicación actual": "Use current location",
+                "¡Día finalizado!": "Day finished!",
+                "Resumen de hoy": "Today summary",
+                "Descargar CSV del día": "Download CSV",
+                "Importar puntos masivamente": "Bulk import",
+                "Importar ahora": "Import now"
+            }
+        }
+        
+        function t(key) { return translations[currentLang][key] || key }
+        
+        function updateTranslations() {
+            document.querySelectorAll('[data-t]').forEach(el => {
+                const key = el.getAttribute('data-t')
+                if (translations[currentLang][key]) el.textContent = translations[currentLang][key]
+            })
+        }
+        
+        // ==================== DATA ====================
+        let DB = {
+            users: [
+                { id: 1, name: "Carlos Ramírez" },
+                { id: 2, name: "María López" },
+                { id: 3, name: "Juan Pérez" },
+                { id: 4, name: "Ana Torres" },
+                { id: 5, name: "Luis Gómez" }
+            ],
+            predefinedPoints: {
+                1: [{ id: 101, name: "Tienda El Progreso", lat: 3.4516, lng: -76.5320 }],
+                2: [{ id: 201, name: "Supermercado Éxito", lat: 3.4378, lng: -76.5224 }]
+            },
+            visits: []
+        }
+        
+        let currentUserId = null
+        let currentDayPoints = []
+        let mapInstance = null
+        let routePolyline = null
+        let selectedAdminUserId = null
+        let todayDate = '2026-04-06'
+        
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371
+            const dLat = (lat2 - lat1) * Math.PI / 180
+            const dLon = (lon2 - lon1) * Math.PI / 180
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2)**2
+            return Math.round(6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 100) / 100
+        }
+        
+        // Storage
+        function loadDB() {
+            const saved = localStorage.getItem('geoventas_db')
+            if (saved) DB = JSON.parse(saved)
+        }
+        function saveDB() {
+            localStorage.setItem('geoventas_db', JSON.stringify(DB))
+        }
+        
+        // Language
+        function switchLanguage(lang) {
+            currentLang = lang
+            document.getElementById('lang-es').classList.toggle('bg-white', lang === 'es')
+            document.getElementById('lang-es').classList.toggle('text-[#1E40AF]', lang === 'es')
+            document.getElementById('lang-en').classList.toggle('bg-white', lang === 'en')
+            document.getElementById('lang-en').classList.toggle('text-[#1E40AF]', lang === 'en')
+            updateTranslations()
+            renderUserList()
+            if (!document.getElementById('admin-screen').classList.contains('hidden')) {
+                renderAdminUsers()
+                renderAdminPointsSelect()
+            }
+        }
+        
+        // Mode
+        function setMode(mode) {
+            document.getElementById('seller-screen').classList.toggle('hidden', mode !== 'seller')
+            document.getElementById('admin-screen').classList.toggle('hidden', mode !== 'admin')
+            
+            document.getElementById('mode-seller').classList.toggle('bg-white', mode === 'seller')
+            document.getElementById('mode-seller').classList.toggle('text-[#1E40AF]', mode === 'seller')
+            document.getElementById('mode-admin').classList.toggle('bg-white', mode === 'admin')
+            document.getElementById('mode-admin').classList.toggle('text-[#1E40AF]', mode === 'admin')
+            
+            if (mode === 'seller') renderUserList()
+            else {
+                renderAdminUsers()
+                renderAdminPointsSelect()
+            }
+        }
+        
+        // ==================== SELLER ====================
+        function renderUserList() {
+            const container = document.getElementById('user-list')
+            container.innerHTML = ''
+            const isManyUsers = DB.users.length > 4
+            
+            container.className = isManyUsers 
+                ? "space-y-4" 
+                : "grid grid-cols-1 sm:grid-cols-2 gap-4"
+            
+            DB.users.forEach(user => {
+                const div = document.createElement('div')
+                div.className = isManyUsers 
+                    ? "user-card bg-white border border-slate-200 rounded-3xl p-5 flex items-center gap-4 active:scale-[0.98]"
+                    : "user-card bg-white border border-slate-200 rounded-3xl p-6 text-center hover:shadow-xl active:scale-[0.98]"
+                
+                if (isManyUsers) {
+                    div.innerHTML = `
+                        <div class="text-5xl flex-shrink-0">👷‍♂️</div>
+                        <div class="flex-1 text-left">
+                            <div class="font-semibold text-lg">${user.name}</div>
+                            <div class="text-xs text-slate-500">ID #${user.id}</div>
+                        </div>
+                    `
+                } else {
+                    div.innerHTML = `
+                        <div class="text-6xl mb-4">👷‍♂️</div>
+                        <div class="font-semibold text-2xl">${user.name}</div>
+                        <div class="text-sm text-slate-500 mt-1">ID #${user.id}</div>
+                    `
+                }
+                
+                div.onclick = () => {
+                    currentUserId = user.id
+                    document.getElementById('seller-home').classList.add('hidden')
+                    document.getElementById('active-day-screen').classList.remove('hidden')
+                    startDay()
+                }
+                container.appendChild(div)
+            })
+        }
+        
+        function startDay() {
+            const existing = DB.visits.find(v => v.userId === currentUserId && v.date === todayDate)
+            currentDayPoints = existing ? [...existing.points] : []
+            renderCurrentDay()
+            initMap()
+        }
+        
+        function renderCurrentDay() {
+            document.getElementById('current-user-name').textContent = DB.users.find(u => u.id === currentUserId).name
+            document.getElementById('current-date').textContent = todayDate
+            
+            const totalKm = currentDayPoints.reduce((sum, p) => sum + (p.distanceKm || 0), 0)
+            document.getElementById('total-km-badge').innerHTML = `<span class="font-mono">${totalKm.toFixed(1)}</span> km`
+            
+            const listEl = document.getElementById('visited-list')
+            listEl.innerHTML = ''
+            
+            if (currentDayPoints.length === 0) {
+                listEl.innerHTML = `<div class="bg-white rounded-3xl p-12 text-center text-slate-400">Aún no hay puntos registrados</div>`
+                return
+            }
+            
+            currentDayPoints.forEach(point => {
+                const item = document.createElement('div')
+                item.className = "bg-white rounded-3xl p-5 flex justify-between border border-slate-100"
+                item.innerHTML = `
+                    <div>
+                        <div class="font-medium">${point.name}</div>
+                        <div class="text-xs text-slate-500 mt-1">${new Date(point.timestamp).toLocaleTimeString(currentLang === 'es' ? 'es-CO' : 'en-US')}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-slate-400">Distancia</div>
+                        <div class="font-mono font-bold text-emerald-600">${point.distanceKm || 0} km</div>
+                    </div>
+                `
+                listEl.appendChild(item)
+            })
+            updateMapRoute()
+        }
+        
+        function initMap() {
+            if (mapInstance) mapInstance.remove()
+            mapInstance = L.map('map', { zoomControl: true, attributionControl: false }).setView([3.45, -76.53], 14)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapInstance)
+            updateMapRoute()
+        }
+        
+        function updateMapRoute() {
+            if (!mapInstance || currentDayPoints.length < 1) return
+            if (routePolyline) mapInstance.removeLayer(routePolyline)
+            
+            const latlngs = currentDayPoints.map(p => [p.lat, p.lng])
+            routePolyline = L.polyline(latlngs, { color: '#1E40AF', weight: 5, opacity: 0.85 }).addTo(mapInstance)
+            
+            currentDayPoints.forEach((p, i) => {
+                L.marker([p.lat, p.lng]).addTo(mapInstance).bindPopup(`<b>${p.name}</b><br>${p.distanceKm} km`)
+            })
+            
+            if (latlngs.length > 1) mapInstance.fitBounds(routePolyline.getBounds(), { padding: [40, 40] })
+        }
+        
+        // Add Point Modal functions (mantengo igual que antes)
+        function showAddPointModal() {
+            document.getElementById('add-point-modal').classList.remove('hidden')
+            document.getElementById('reverse-result').classList.add('hidden')
+            switchTab(1)
+            loadPredefinedSelect()
+        }
+        
+        function hideAddPointModal() { document.getElementById('add-point-modal').classList.add('hidden') }
+        
+        function switchTab(n) {
+            document.getElementById('tab-content-1').classList.toggle('hidden', n !== 1)
+            document.getElementById('tab-content-2').classList.toggle('hidden', n !== 2)
+            document.getElementById('tab-1').classList.toggle('border-b-4', n === 1)
+            document.getElementById('tab-1').classList.toggle('border-[#1E40AF]', n === 1)
+        }
+        
+        function getCurrentLocationAndReverseGeocode() { /* misma lógica que antes */ 
+            const btn = document.getElementById('geocode-btn')
+            const orig = btn.textContent
+            btn.textContent = currentLang === 'es' ? '🔄 Buscando...' : '🔄 Searching...'
+            
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const { latitude: lat, longitude: lng } = pos.coords
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`, { headers: {'User-Agent': 'GeoVentas'} })
+                    const data = await res.json()
+                    const name = data.display_name || 'Ubicación actual'
+                    document.getElementById('detected-name').innerHTML = `📍 <strong>${name}</strong>`
+                    document.getElementById('custom-name-1').value = name
+                    window.tempLat = lat; window.tempLng = lng; window.tempName = name
+                    document.getElementById('reverse-result').classList.remove('hidden')
+                } catch(e) {
+                    document.getElementById('custom-name-1').value = 'Punto manual'
+                    document.getElementById('reverse-result').classList.remove('hidden')
+                    window.tempLat = lat; window.tempLng = lng
+                }
+                btn.textContent = orig
+            }, () => { alert('Se necesita permiso de ubicación'); btn.textContent = orig }, { enableHighAccuracy: true })
+        }
+        
+        function savePointFromGeocode() {
+            const name = document.getElementById('custom-name-1').value || window.tempName
+            const last = currentDayPoints.at(-1)
+            const dist = last ? haversine(last.lat, last.lng, window.tempLat, window.tempLng) : 0
+            currentDayPoints.push({ timestamp: new Date().toISOString(), name, lat: window.tempLat, lng: window.tempLng, distanceKm: dist })
+            hideAddPointModal()
+            renderCurrentDay()
+        }
+        
+        function loadPredefinedSelect() {
+            const sel = document.getElementById('predefined-select')
+            sel.innerHTML = `<option value="">${currentLang==='es'?'-- Elige un punto --':'-- Choose point --'}</option>`
+            if (DB.predefinedPoints[currentUserId]) {
+                DB.predefinedPoints[currentUserId].forEach(p => {
+                    const o = document.createElement('option')
+                    o.value = p.id
+                    o.textContent = p.name
+                    sel.appendChild(o)
+                })
+            }
+        }
+        
+        function savePredefinedPoint() {
+            const id = parseInt(document.getElementById('predefined-select').value)
+            if (!id) return
+            const pointData = DB.predefinedPoints[currentUserId].find(p => p.id === id)
+            navigator.geolocation.getCurrentPosition(pos => {
+                const { latitude: lat, longitude: lng } = pos.coords
+                const last = currentDayPoints.at(-1)
+                const dist = last ? haversine(last.lat, last.lng, lat, lng) : 0
+                currentDayPoints.push({ timestamp: new Date().toISOString(), name: pointData.name, lat, lng, distanceKm: dist })
+                hideAddPointModal()
+                renderCurrentDay()
+            }, () => alert('Geolocalización requerida'), { enableHighAccuracy: true })
+        }
+        
+        function finishDay() {
+            if (currentDayPoints.length === 0) return alert(currentLang === 'es' ? 'No hay puntos' : 'No points')
+            let record = DB.visits.find(v => v.userId === currentUserId && v.date === todayDate)
+            if (!record) {
+                record = { userId: currentUserId, date: todayDate, points: [] }
+                DB.visits.push(record)
+            }
+            record.points = [...currentDayPoints]
+            saveDB()
+            showSummaryModal()
+        }
+        
+        function showSummaryModal() {
+            const modal = document.getElementById('summary-modal')
+            modal.classList.remove('hidden')
+            const total = currentDayPoints.reduce((a, p) => a + (p.distanceKm||0), 0)
+            let html = `<div class="flex justify-between"><span>${t('Puntos visitados hoy')}</span><span class="font-bold">${currentDayPoints.length}</span></div>`
+            html += `<div class="flex justify-between mt-4 text-3xl font-mono font-bold text-emerald-600"><span>${total.toFixed(1)}</span><span class="text-base font-sans mt-2">km total</span></div>`
+            document.getElementById('summary-content').innerHTML = html
+        }
+        
+        function hideSummaryModal() {
+            document.getElementById('summary-modal').classList.add('hidden')
+            currentUserId = null
+            currentDayPoints = []
+            document.getElementById('active-day-screen').classList.add('hidden')
+            document.getElementById('seller-home').classList.remove('hidden')
+        }
+        
+        function downloadTodayCSV() {
+            hideSummaryModal()
+            const record = DB.visits.find(v => v.userId === currentUserId && v.date === todayDate)
+            if (!record) return
+            let csv = "usuario,fecha,nombre_punto,latitud,longitud,hora,distancia_km_desde_anterior\n"
+            let total = 0
+            record.points.forEach(p => {
+                const hora = new Date(p.timestamp).toLocaleTimeString('es-CO')
+                csv += `${currentUserId},${todayDate},"${p.name}",${p.lat},${p.lng},${hora},${p.distanceKm||0}\n`
+                total += p.distanceKm||0
+            })
+            csv += `TOTAL,,,,,${total.toFixed(1)}\n`
+            const blob = new Blob([csv], {type: 'text/csv'})
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = `geoventas_dia_${todayDate}.csv`
+            a.click()
+        }
+        
+        // ==================== ADMIN ====================
+        function renderAdminUsers() {
+            const cont = document.getElementById('admin-users-list')
+            cont.innerHTML = ''
+            DB.users.forEach(user => {
+                const card = document.createElement('div')
+                card.className = "bg-white rounded-3xl p-5 flex items-center justify-between border border-slate-100"
+                card.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <span class="text-4xl">👷‍♂️</span>
+                        <div>
+                            <div class="font-semibold">${user.name}</div>
+                            <div class="text-xs text-slate-400">ID #${user.id}</div>
+                        </div>
+                    </div>
+                    <button onclick="deleteUser(${user.id}); event.stopImmediatePropagation()" class="text-red-500 text-sm px-3 py-1">Eliminar</button>
+                `
+                cont.appendChild(card)
+            })
+        }
+        
+        function showAddUserModal() { document.getElementById('add-user-modal').classList.remove('hidden') }
+        function hideAddUserModal() { document.getElementById('add-user-modal').classList.add('hidden') }
+        
+        function addNewUser() {
+            const name = document.getElementById('new-user-name').value.trim()
+            if (!name) return
+            const newId = Math.max(0, ...DB.users.map(u => u.id)) + 1
+            DB.users.push({id: newId, name})
+            saveDB()
+            hideAddUserModal()
+            renderAdminUsers()
+            renderAdminPointsSelect()
+        }
+        
+        function deleteUser(id) {
+            if (!confirm(currentLang==='es'?'¿Eliminar usuario permanentemente?':'Delete user permanently?')) return
+            DB.users = DB.users.filter(u => u.id !== id)
+            delete DB.predefinedPoints[id]
+            DB.visits = DB.visits.filter(v => v.userId !== id)
+            saveDB()
+            renderAdminUsers()
+            renderAdminPointsSelect()
+        }
+        
+        function renderAdminPointsSelect() {
+            const sel = document.getElementById('admin-user-select')
+            sel.innerHTML = ''
+            DB.users.forEach(u => {
+                const opt = document.createElement('option')
+                opt.value = u.id
+                opt.textContent = u.name
+                sel.appendChild(opt)
+            })
+            if (DB.users.length) {
+                selectedAdminUserId = DB.users[0].id
+                loadPointsForUser()
+            }
+        }
+        
+        function loadPointsForUser() {
+            selectedAdminUserId = parseInt(document.getElementById('admin-user-select').value)
+            const container = document.getElementById('points-list')
+            container.innerHTML = ''
+            const points = DB.predefinedPoints[selectedAdminUserId] || []
+            points.forEach((p, idx) => {
+                const row = document.createElement('div')
+                row.className = "bg-white rounded-3xl px-6 py-5 flex justify-between items-center border border-slate-100"
+                row.innerHTML = `
+                    <div class="flex-1">
+                        <span class="font-medium">${p.name}</span>
+                        <span class="ml-6 text-xs text-slate-400">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span>
+                    </div>
+                    <button onclick="deletePredefinedPoint(${selectedAdminUserId},${idx});event.stopImmediatePropagation()" class="text-red-400">🗑</button>
+                `
+                container.appendChild(row)
+            })
+            if (points.length === 0) {
+                container.innerHTML = `<p class="text-center py-10 text-slate-400">${currentLang==='es'?'Sin puntos predefinidos':'No predefined points'}</p>`
+            }
+        }
+        
+        function deletePredefinedPoint(userId, idx) {
+            DB.predefinedPoints[userId].splice(idx, 1)
+            saveDB()
+            loadPointsForUser()
+        }
+        
+        function showAddPointAdminModal() {
+            if (!selectedAdminUserId) return alert('Selecciona usuario')
+            document.getElementById('add-predefined-modal').classList.remove('hidden')
+        }
+        function hideAddPredefinedModal() { document.getElementById('add-predefined-modal').classList.add('hidden') }
+        
+        function getCurrentLocationForAdminPoint() {
+            navigator.geolocation.getCurrentPosition(p => {
+                document.getElementById('new-point-lat').value = p.coords.latitude
+                document.getElementById('new-point-lng').value = p.coords.longitude
+            }, () => {}, { enableHighAccuracy: true })
+        }
+        
+        function saveNewPredefinedPoint() {
+            const name = document.getElementById('new-point-name').value.trim()
+            const lat = parseFloat(document.getElementById('new-point-lat').value)
+            const lng = parseFloat(document.getElementById('new-point-lng').value)
+            if (!name || isNaN(lat) || isNaN(lng)) return alert('Datos incompletos')
+            if (!DB.predefinedPoints[selectedAdminUserId]) DB.predefinedPoints[selectedAdminUserId] = []
+            DB.predefinedPoints[selectedAdminUserId].push({id: Date.now(), name, lat, lng})
+            saveDB()
+            hideAddPredefinedModal()
+            loadPointsForUser()
+        }
+        
+        function showBulkImportModal() {
+            if (!selectedAdminUserId) return alert(currentLang==='es' ? 'Selecciona un usuario' : 'Select a user')
+            document.getElementById('bulk-modal').classList.remove('hidden')
+        }
+        function hideBulkImportModal() { document.getElementById('bulk-modal').classList.add('hidden') }
+        
+        function processBulkImport() {
+            const text = document.getElementById('bulk-textarea').value.trim()
+            if (!text) return
+            const lines = text.split('\n')
+            let count = 0
+            if (!DB.predefinedPoints[selectedAdminUserId]) DB.predefinedPoints[selectedAdminUserId] = []
+            lines.forEach(line => {
+                const [name, latStr, lngStr] = line.split(',').map(x => x.trim())
+                const lat = parseFloat(latStr)
+                const lng = parseFloat(lngStr)
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    DB.predefinedPoints[selectedAdminUserId].push({id: Date.now()+count, name, lat, lng})
+                    count++
+                }
+            })
+            saveDB()
+            hideBulkImportModal()
+            loadPointsForUser()
+            alert(`${count} puntos importados correctamente`)
+        }
+        
+        function exportAllData() {
+            let csv = "usuario,fecha,nombre_punto,latitud,longitud,hora,distancia_km_desde_anterior\n"
+            DB.visits.forEach(v => {
+                const uname = DB.users.find(u => u.id === v.userId)?.name || '?'
+                v.points.forEach(p => {
+                    const h = new Date(p.timestamp).toLocaleTimeString('es-CO')
+                    csv += `${uname},${v.date},"${p.name}",${p.lat},${p.lng},${h},${p.distanceKm||0}\n`
+                })
+            })
+            const blob = new Blob([csv], {type:'text/csv'})
+            const link = document.createElement('a')
+            link.href = URL.createObjectURL(blob)
+            link.download = `geoventas_historial_${todayDate}.csv`
+            link.click()
+        }
+        
+        function startNewDayDemo() {
+            if (DB.users.length && !currentUserId) {
+                currentUserId = DB.users[0].id
+                document.getElementById('seller-home').classList.add('hidden')
+                document.getElementById('active-day-screen').classList.remove('hidden')
+                startDay()
+            }
+        }
+        
+        // INIT
+        function initializeApp() {
+            loadDB()
+            updateTranslations()
+            renderUserList()
+            setMode('seller')
+            console.log('%cGeoVentas actualizado - Header optimizado + lista vertical para >4 usuarios', 'color:#1E40AF;font-weight:600')
+        }
+        
+        window.onload = initializeApp
+    </script>
+</body>
+</html>
